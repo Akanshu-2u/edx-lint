@@ -39,7 +39,7 @@ class PiiAnnotationChecker(BaseChecker):
     # Message definitions
     msgs = {
         ("W%d33" % BASE_ID): (
-            "Django model '%s' is annotated as no_pii but contains likely PII field(s): %s",
+            "Django model '%s' is annotated as no_pii but contains likely PII field: '%s'",
             "pii-invalid-no-pii-annotation",
             "Django model annotated with '.. no_pii:' contains fields that look like PII. "
             "Replace the annotation with '.. pii:' and the required metadata. "
@@ -108,11 +108,11 @@ class PiiAnnotationChecker(BaseChecker):
             return
 
         pii_fields = self._collect_pii_fields(node)
-        if pii_fields:
+        for field_name, field_node in pii_fields:
             self.add_message(
                 "pii-invalid-no-pii-annotation",
-                node=node,
-                args=(node.name, ", ".join(pii_fields)),
+                node=field_node,
+                args=(node.name, field_name),
             )
 
     def _is_annotation_eligible_django_model(self, node):
@@ -252,7 +252,7 @@ class PiiAnnotationChecker(BaseChecker):
 
     def _collect_pii_fields(self, node):
         """
-        Return all PII-like field name strings found in the class body.
+        Return all PII-like field name strings and their AST nodes found in the class body.
 
         Scans:
         - Class-level ``Assign`` targets:    ``email = models.EmailField()``
@@ -267,13 +267,13 @@ class PiiAnnotationChecker(BaseChecker):
                 for target in child.targets:
                     if isinstance(target, astroid_nodes.AssignName):
                         if self._is_pii_name(target.name):
-                            found.append(target.name)
+                            found.append((target.name, child))
 
             # Class-level annotated assignment: ``email: str = ""``
             elif isinstance(child, astroid_nodes.AnnAssign):
                 if isinstance(child.target, astroid_nodes.AssignName):
                     if self._is_pii_name(child.target.name):
-                        found.append(child.target.name)
+                        found.append((child.target.name, child))
 
             # Instance attributes set inside methods: ``self.email = ...``
             elif isinstance(child, astroid_nodes.FunctionDef):
@@ -283,6 +283,6 @@ class PiiAnnotationChecker(BaseChecker):
                                 and isinstance(target.expr, astroid_nodes.Name)
                                 and target.expr.name == "self"
                                 and self._is_pii_name(target.attrname)):
-                            found.append(f"self.{target.attrname}")
+                            found.append((f"self.{target.attrname}", stmt))
 
         return found

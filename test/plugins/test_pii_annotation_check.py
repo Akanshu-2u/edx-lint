@@ -21,12 +21,12 @@ def _has(messages, marker):
 def test_no_pii_docstring_with_pii_field():
     """.. no_pii: docstring + PII field fires on the class line."""
     source = """\
-        class LearnerProfile(Model):                    #=A
+        class LearnerProfile(Model):
             '''
             .. no_pii: Stores only course metadata.
             '''
             course_id = None
-            email = None
+            email = None                                #=A
     """
     messages = _run(source)
     assert _has(messages, "A")
@@ -37,9 +37,9 @@ def test_no_pii_comment_above_class():
     """# .. no_pii: comment above class with PII field fires."""
     source = """\
         # .. no_pii:
-        class CourseEnrollment(Model):                  #=A
+        class CourseEnrollment(Model):
             course_id = None
-            username = None
+            username = None                             #=A
     """
     messages = _run(source)
     assert _has(messages, "A")
@@ -47,18 +47,18 @@ def test_no_pii_comment_above_class():
 
 
 def test_no_pii_multiple_pii_fields_single_message():
-    """Multiple PII fields produce exactly one message listing all."""
+    """Multiple PII fields produce exactly one message per field."""
     source = """\
-        class Profile(Model):                           #=A
+        class Profile(Model):
             '''.. no_pii:'''
-            email = None
-            username = None
+            email = None                                #=A
+            username = None                             #=B
             phone_number = None
     """
     messages = _run(source)
-    assert len(messages) == 1
-    msg = list(messages)[0]
-    assert "email" in msg and "username" in msg and "phone_number" not in msg
+    assert len(messages) == 2
+    assert _has(messages, "A")
+    assert _has(messages, "B")
 
 
 def test_no_pii_with_non_pii_fields_ok():
@@ -99,10 +99,10 @@ def test_pii_annotated_class_not_checked():
 def test_no_pii_instance_attr_in_method_flagged():
     """self.username = ... inside __init__ of a .. no_pii: model fires."""
     source = """\
-        class UserData(Model):                          #=A
+        class UserData(Model):
             '''.. no_pii:'''
             def __init__(self, data):
-                self.username = data.username
+                self.username = data.username           #=A
                 self.is_active = data.active
     """
     messages = _run(source)
@@ -113,9 +113,9 @@ def test_no_pii_instance_attr_in_method_flagged():
 def test_no_pii_annotated_assignment_flagged():
     """email: str = '' (AnnAssign) on a .. no_pii: model fires."""
     source = """\
-        class Profile(Model):                           #=A
+        class Profile(Model):
             '''.. no_pii:'''
-            email: str = ""
+            email: str = ""                             #=A
     """
     assert _has(_run(source), "A")
 
@@ -123,9 +123,9 @@ def test_no_pii_annotated_assignment_flagged():
 def test_no_pii_inline_disable_suppresses():
     """Inline pylint:disable=pii-invalid-no-pii-annotation suppresses the rule."""
     source = """\
-        class Profile(Model):  # pylint: disable=pii-invalid-no-pii-annotation
+        class Profile(Model):
             '''.. no_pii:'''
-            email = None
+            email = None  # pylint: disable=pii-invalid-no-pii-annotation
     """
     assert not _run(source)
 
@@ -135,8 +135,8 @@ def test_decorator_between_comment_annotation_and_class():
     source = """\
         # .. no_pii:
         @some_decorator
-        class Enrollment(Model):                        #=A
-            username = None
+        class Enrollment(Model):
+            username = None                             #=A
     """
     assert _has(_run(source), "A")
 
@@ -189,9 +189,9 @@ def test_concrete_model_indirect_inheritance_checked():
             '''.. no_pii:'''
             course_id = None
 
-        class CourseEnrollment(TimeStampedModel):       #=A
+        class CourseEnrollment(TimeStampedModel):
             '''.. no_pii:'''
-            username = None
+            username = None                             #=A
     """
     messages = _run(source)
     assert _has(messages, "A")
