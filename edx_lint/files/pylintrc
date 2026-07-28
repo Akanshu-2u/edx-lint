@@ -517,7 +517,7 @@ overgeneral-exceptions=builtins.Exception
 
 [PII]
 
-# Comma-separated list of identifier substrings treated as likely PII.
+# Comma-separated list of identifier substrings treated as PII.
 # Substring matching is used, so 'email' will match 'user_email_address'.
 pii-terms =
     email,

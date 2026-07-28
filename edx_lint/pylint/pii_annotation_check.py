@@ -1,6 +1,6 @@
 """
 PII Annotation Checker — flags Django models annotated ``.. no_pii:`` that
-still contain likely-PII fields or instance attributes (W7633).
+still contain PII fields or instance attributes (W7633).
 """
 
 import re
@@ -39,7 +39,7 @@ class PiiAnnotationChecker(BaseChecker):
     # Message definitions
     msgs = {
         ("W%d33" % BASE_ID): (
-            "Django model '%s' is annotated as no_pii but contains likely PII field: '%s'",
+            "Django model '%s' is annotated as no_pii but contains PII field: '%s'",
             "pii-invalid-no-pii-annotation",
             "Django model annotated with '.. no_pii:' contains fields that look like PII. "
             "Replace the annotation with '.. pii:' and the required metadata. "
@@ -56,7 +56,7 @@ class PiiAnnotationChecker(BaseChecker):
                 "default": None,
                 "type": "csv",
                 "metavar": "<comma-separated PII terms>",
-                "help": "List of PII-like terms to flag.",
+                "help": "List of PII terms to flag.",
             },
         ),
         (
@@ -111,7 +111,7 @@ class PiiAnnotationChecker(BaseChecker):
 
     def _is_pii_name(self, name):
         """
-        Return True if *name* is a likely PII identifier.
+        Return True if *name* is a PII identifier.
 
         Substring match of any pii-term inside *name* → PII.
         """
@@ -276,7 +276,7 @@ class PiiAnnotationChecker(BaseChecker):
 
     def _collect_pii_fields(self, node):
         """
-        Return all PII-like field name strings and their AST nodes found in the class body.
+        Return all PII field name strings and their AST nodes found in the class body.
 
         Scans:
         - Class-level ``Assign`` targets:    ``email = models.EmailField()``
