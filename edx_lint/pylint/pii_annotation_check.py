@@ -48,19 +48,41 @@ class PiiAnnotationChecker(BaseChecker):
         ),
     }
 
+        # Options must be defined on the checker so it can be configured independently
+    options = (
+        (
+            "pii-terms",
+            {
+                "default": None,
+                "type": "csv",
+                "metavar": "<comma-separated PII terms>",
+                "help": "List of PII-like terms to flag.",
+            },
+        ),
+        (
+            "pii-django-model-bases",
+            {
+                "default": "Model",
+                "type": "csv",
+                "metavar": "<comma-separated base class names>",
+                "help": "Base class *names* that identify a Django model.",
+            },
+        ),
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._source_lines = []
-        self._pii_terms_cache = None
-        self._django_model_bases_cache = None
+        self._parsed_pii_terms = None
+        self._parsed_django_model_bases = None
         self._module_classdefs = {}
 
     @utils.only_required_for_messages("pii-invalid-no-pii-annotation")
     def visit_module(self, node):
         """Cache source lines and reset all per-module state."""
-        # Reset config caches so option values are re-read for each module.
-        self._init_pii_caches()
-        self._django_model_bases_cache = None
+        # Reset parsed configs so option values are re-read for each module.
+        self._reset_parsed_config()
+        self._parsed_django_model_bases = None
         self._module_classdefs = {}
         try:
             module_bytes = node.stream().read()
@@ -69,21 +91,23 @@ class PiiAnnotationChecker(BaseChecker):
         except Exception:  # pylint: disable=broad-except
             self._source_lines = []
 
-    def _init_pii_caches(self):
-        """Reset per-module config caches to None."""
-        self._pii_terms_cache = None
+    def _reset_parsed_config(self):
+        """Reset per-module parsed configs to None."""
+        self._parsed_pii_terms = None
 
-    def _ensure_config_cached(self):
-        """Populate pii-terms cache on first call within a module."""
-        if self._pii_terms_cache is not None:
+    def _parse_and_store_config(self):
+        """Parse pii-terms config on first call within a module."""
+        if self._parsed_pii_terms is not None:
             return
         cfg = self.linter.config
-        raw_terms = getattr(cfg, "pii_terms", ["email", "username"])
-        self._pii_terms_cache = [t.strip().lower() for t in raw_terms if t.strip()]
+        raw_terms = getattr(cfg, "pii_terms", None)
+        if raw_terms is None:
+            raise ValueError("The 'pii_terms' setting must be configured.")
+        self._parsed_pii_terms = [t.strip().lower() for t in raw_terms if t.strip()]
 
     def _pii_terms(self):
-        self._ensure_config_cached()
-        return self._pii_terms_cache
+        self._parse_and_store_config()
+        return self._parsed_pii_terms
 
     def _is_pii_name(self, name):
         """
@@ -156,10 +180,10 @@ class PiiAnnotationChecker(BaseChecker):
         first call per module; reset to None by visit_module so options are
         re-read for each module.
         """
-        if self._django_model_bases_cache is None:
+        if self._parsed_django_model_bases is None:
             raw = getattr(self.linter.config, "pii_django_model_bases", ["Model"])
-            self._django_model_bases_cache = {b.strip() for b in raw if b.strip()}
-        return self._django_model_bases_cache
+            self._parsed_django_model_bases = {b.strip() for b in raw if b.strip()}
+        return self._parsed_django_model_bases
 
     def _raw_ast_is_model_subclass(self, node):
         """

@@ -9,7 +9,7 @@ _ID = "pii-invalid-no-pii-annotation"
 
 
 def _run(source):
-    return run_pylint(source, _ID)
+    return run_pylint(source, _ID, "--pii-terms=email,username")
 
 
 def _has(messages, marker):
