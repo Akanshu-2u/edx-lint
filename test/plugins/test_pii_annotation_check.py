@@ -206,3 +206,17 @@ def test_non_model_class_with_pii_but_no_annotation_ignored():
             username = None
     """
     assert not _run(source)
+
+
+def test_comment_annotation_no_bleed_across_class_boundary():
+    """# .. no_pii: on SmallModel must not bleed into adjacent NearbyModel."""
+    source = """\
+        # .. no_pii:
+        class SmallModel(Model):
+            count = None
+
+        class NearbyModel(Model):
+            email = None                                #=B
+    """
+    messages = _run(source)
+    assert not _has(messages, "B")

@@ -28,27 +28,21 @@ def register_checkers(linter):
 
 @check_visitors
 class PiiAnnotationChecker(BaseChecker):
-    """
-    Fires ``pii-invalid-no-pii-annotation`` (W7633) when a concrete Django model
-    is annotated ``.. no_pii:`` but still has fields matching the PII terms list.
-    Abstract and proxy models are skipped, mirroring django_find_annotations scope.
-    """
+    """Flags concrete Django models annotated ``.. no_pii:`` that contain PII fields (W7633)."""
 
     name = "pii-annotation-checker"
+    PII_INVALID_ANNOTATION_MESSAGE_ID = "pii-invalid-no-pii-annotation"
 
     # Message definitions
     msgs = {
         ("W%d33" % BASE_ID): (
             "Django model '%s' is annotated as no_pii but contains PII field: '%s'",
-            "pii-invalid-no-pii-annotation",
-            "Django model annotated with '.. no_pii:' contains fields that look like PII. "
-            "Replace the annotation with '.. pii:' and the required metadata. "
-            "Only concrete (non-abstract, non-proxy) Django Model subclasses are checked, "
-            "matching the scope of 'code_annotations django_find_annotations'.",
+            PII_INVALID_ANNOTATION_MESSAGE_ID,
+            "Model claims no_pii but has PII-named fields. Update annotation to '.. pii:' or rename the field.",
         ),
     }
 
-        # Options must be defined on the checker so it can be configured independently
+    # Options must be defined on the checker so it can be configured independently
     options = (
         (
             "pii-terms",
@@ -118,7 +112,7 @@ class PiiAnnotationChecker(BaseChecker):
         lower = name.lower()
         return any(term in lower for term in self._pii_terms())
 
-    @utils.only_required_for_messages("pii-invalid-no-pii-annotation")
+    @utils.only_required_for_messages(PII_INVALID_ANNOTATION_MESSAGE_ID)
     def visit_classdef(self, node):
         """
         Detect PII fields in Django model classes annotated with ``.. no_pii:``.
@@ -134,7 +128,7 @@ class PiiAnnotationChecker(BaseChecker):
         pii_fields = self._collect_pii_fields(node)
         for field_name, field_node in pii_fields:
             self.add_message(
-                "pii-invalid-no-pii-annotation",
+                self.PII_INVALID_ANNOTATION_MESSAGE_ID,
                 node=field_node,
                 args=(node.name, field_name),
             )
@@ -258,17 +252,19 @@ class PiiAnnotationChecker(BaseChecker):
         return bool(_NO_PII_DOCSTRING_RE.search(docstring))
 
     def _comment_has_no_pii(self, node):
-        """
-        Return True if a ``# .. no_pii:`` comment appears above the class.
-
-        Scans up to ``_ANNOTATION_LOOKAHEAD`` source lines before the class
-        statement, covering decorators and blank lines between the comment and
-        the class declaration.
-        """
+        """Return True if a ``# .. no_pii:`` comment appears above the class."""
         if not self._source_lines:
             return False
-        end = node.lineno - 1
-        start = max(0, end - _ANNOTATION_LOOKAHEAD)
+        end = node.lineno - 1  # line just before the ``class`` keyword
+        parent = node.parent
+        if isinstance(parent, astroid_nodes.Module):
+            start = 0
+            for sibling in parent.body:
+                if sibling is node:
+                    break
+                start = sibling.tolineno  # last line of each preceding sibling
+        else:
+            start = max(0, end - _ANNOTATION_LOOKAHEAD)  # fallback: nested class
         for line in self._source_lines[start:end]:
             if _NO_PII_COMMENT_RE.match(line):
                 return True
