@@ -12,13 +12,8 @@ from pylint.checkers import BaseChecker, utils
 from .common import BASE_ID, check_visitors
 
 
-# Regexes that detect ``.. no_pii:`` in class docstrings and comment lines.
+# Regex that detects ``.. no_pii:`` in class docstrings.
 _NO_PII_DOCSTRING_RE = re.compile(r"\.\.\s*no_pii", re.IGNORECASE)
-_NO_PII_COMMENT_RE = re.compile(r"[\s]*#[\s]*\.\.\s*no_pii", re.IGNORECASE)
-
-# Number of source lines *above* the ``class`` statement to scan for a
-# comment-style ``# .. no_pii:`` annotation.
-_ANNOTATION_LOOKAHEAD = 10
 
 
 def register_checkers(linter):
@@ -66,24 +61,17 @@ class PiiAnnotationChecker(BaseChecker):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._source_lines = []
         self._parsed_pii_terms = None
         self._parsed_django_model_bases = None
         self._module_classdefs = {}
 
     @utils.only_required_for_messages("pii-invalid-no-pii-annotation")
     def visit_module(self, node):
-        """Cache source lines and reset all per-module state."""
+        """Reset all per-module state."""
         # Reset parsed configs so option values are re-read for each module.
         self._reset_parsed_config()
         self._parsed_django_model_bases = None
         self._module_classdefs = {}
-        try:
-            module_bytes = node.stream().read()
-            encoding = node.file_encoding or "utf-8"
-            self._source_lines = module_bytes.decode(encoding).splitlines()
-        except Exception:  # pylint: disable=broad-except
-            self._source_lines = []
 
     def _reset_parsed_config(self):
         """Reset per-module parsed configs to None."""
@@ -238,11 +226,9 @@ class PiiAnnotationChecker(BaseChecker):
 
     def _class_has_no_pii_annotation(self, node):
         """
-        Return True if *node* carries a ``.. no_pii:`` annotation.
-
-        Checks the class docstring first, then comment lines above the class.
+        Return True if the class docstring carries a ``.. no_pii:`` annotation.
         """
-        return self._docstring_has_no_pii(node) or self._comment_has_no_pii(node)
+        return self._docstring_has_no_pii(node)
 
     def _docstring_has_no_pii(self, node):
         """
@@ -250,25 +236,6 @@ class PiiAnnotationChecker(BaseChecker):
         """
         docstring = node.doc_node.value if node.doc_node else ""
         return bool(_NO_PII_DOCSTRING_RE.search(docstring))
-
-    def _comment_has_no_pii(self, node):
-        """Return True if a ``# .. no_pii:`` comment appears above the class."""
-        if not self._source_lines:
-            return False
-        end = node.lineno - 1  # line just before the ``class`` keyword
-        parent = node.parent
-        if isinstance(parent, astroid_nodes.Module):
-            start = 0
-            for sibling in parent.body:
-                if sibling is node:
-                    break
-                start = sibling.tolineno  # last line of each preceding sibling
-        else:
-            start = max(0, end - _ANNOTATION_LOOKAHEAD)  # fallback: nested class
-        for line in self._source_lines[start:end]:
-            if _NO_PII_COMMENT_RE.match(line):
-                return True
-        return False
 
     def _collect_pii_fields(self, node):
         """

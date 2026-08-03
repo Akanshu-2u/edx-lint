@@ -33,19 +33,6 @@ def test_no_pii_docstring_with_pii_field():
     assert any("email" in m for m in messages)
 
 
-def test_no_pii_comment_above_class():
-    """# .. no_pii: comment above class with PII field fires."""
-    source = """\
-        # .. no_pii:
-        class CourseEnrollment(Model):
-            course_id = None
-            username = None                             #=A
-    """
-    messages = _run(source)
-    assert _has(messages, "A")
-    assert any("username" in m for m in messages)
-
-
 def test_no_pii_multiple_pii_fields_single_message():
     """Multiple PII fields produce exactly one message per field."""
     source = """\
@@ -130,17 +117,6 @@ def test_no_pii_inline_disable_suppresses():
     assert not _run(source)
 
 
-def test_decorator_between_comment_annotation_and_class():
-    """Decorator between # .. no_pii: comment and class is still detected."""
-    source = """\
-        # .. no_pii:
-        @some_decorator
-        class Enrollment(Model):
-            username = None                             #=A
-    """
-    assert _has(_run(source), "A")
-
-
 # -- model eligibility (mirrors django_find_annotations scope) ----------------
 
 def test_plain_python_class_not_checked():
@@ -206,17 +182,3 @@ def test_non_model_class_with_pii_but_no_annotation_ignored():
             username = None
     """
     assert not _run(source)
-
-
-def test_comment_annotation_no_bleed_across_class_boundary():
-    """# .. no_pii: on SmallModel must not bleed into adjacent NearbyModel."""
-    source = """\
-        # .. no_pii:
-        class SmallModel(Model):
-            count = None
-
-        class NearbyModel(Model):
-            email = None                                #=B
-    """
-    messages = _run(source)
-    assert not _has(messages, "B")
