@@ -1,6 +1,7 @@
 """Tests for PiiAnnotationChecker (pii-invalid-no-pii-annotation / W7633).
 
-Fires when a concrete Django model has ``.. no_pii:`` but still contains PII fields.
+Fires when a concrete Django model has ``.. no_pii:`` but still contains
+PII fields.
 """
 
 from .pylint_test import run_pylint
@@ -60,7 +61,7 @@ def test_no_pii_with_non_pii_fields_ok():
 
 
 def test_class_without_annotation_not_checked():
-    """Model with PII fields but no annotation is out of scope for this rule."""
+    """Model with PII fields but no annotation is out of scope."""
     source = """\
         class BadModel(Model):
             email = None
@@ -97,6 +98,19 @@ def test_no_pii_instance_attr_in_method_flagged():
     assert any("self.username" in m for m in messages)
 
 
+def test_no_pii_annotated_instance_attr_in_method_flagged():
+    """self.email: str = ... inside method of a .. no_pii: model fires."""
+    source = """\
+        class UserData(Model):
+            '''.. no_pii:'''
+            def __init__(self, value):
+                self.email: str = value                #=A
+    """
+    messages = _run(source)
+    assert _has(messages, "A")
+    assert any("self.email" in m for m in messages)
+
+
 def test_no_pii_annotated_assignment_flagged():
     """email: str = '' (AnnAssign) on a .. no_pii: model fires."""
     source = """\
@@ -108,7 +122,7 @@ def test_no_pii_annotated_assignment_flagged():
 
 
 def test_no_pii_inline_disable_suppresses():
-    """Inline pylint:disable=pii-invalid-no-pii-annotation suppresses the rule."""
+    """Inline disable for pii-invalid-no-pii-annotation suppresses the rule."""
     source = """\
         class Profile(Model):
             '''.. no_pii:'''

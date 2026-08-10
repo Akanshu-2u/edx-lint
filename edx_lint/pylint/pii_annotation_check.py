@@ -23,7 +23,7 @@ def register_checkers(linter):
 
 @check_visitors
 class PiiAnnotationChecker(BaseChecker):
-    """Flags concrete Django models annotated ``.. no_pii:`` that contain PII fields (W7633)."""
+    """Flags concrete ``.. no_pii:`` Django models that still contain PII."""
 
     name = "pii-annotation-checker"
     PII_INVALID_ANNOTATION_MESSAGE_ID = "pii-invalid-no-pii-annotation"
@@ -31,13 +31,16 @@ class PiiAnnotationChecker(BaseChecker):
     # Message definitions
     msgs = {
         ("W%d33" % BASE_ID): (
-            "Django model '%s' is annotated as no_pii but contains PII field: '%s'",
+            "Django model '%s' is annotated as no_pii "
+            "but contains PII field: '%s'",
             PII_INVALID_ANNOTATION_MESSAGE_ID,
-            "Model claims no_pii but has PII-named fields. Update annotation to '.. pii:' or rename the field.",
+            "Model claims no_pii but has PII-named fields. "
+            "Update annotation to '.. pii:' or rename the field.",
         ),
     }
 
-    # Options must be defined on the checker so it can be configured independently
+    # Options must be defined on the checker so it can be configured
+    # independently.
     options = (
         (
             "pii-terms",
@@ -66,7 +69,7 @@ class PiiAnnotationChecker(BaseChecker):
         self._module_classdefs = {}
 
     @utils.only_required_for_messages("pii-invalid-no-pii-annotation")
-    def visit_module(self, node):
+    def visit_module(self, _node):
         """Reset all per-module state."""
         # Reset parsed configs so option values are re-read for each module.
         self._reset_parsed_config()
@@ -81,11 +84,13 @@ class PiiAnnotationChecker(BaseChecker):
         """Parse pii-terms config on first call within a module."""
         if self._parsed_pii_terms is not None:
             return
-        cfg = self.linter.config
-        raw_terms = getattr(cfg, "pii_terms", None)
+        linter_config = self.linter.config
+        raw_terms = getattr(linter_config, "pii_terms", None)
         if raw_terms is None:
             raise ValueError("The 'pii_terms' setting must be configured.")
-        self._parsed_pii_terms = [t.strip().lower() for t in raw_terms if t.strip()]
+        self._parsed_pii_terms = [
+            term.strip().lower() for term in raw_terms if term.strip()
+        ]
 
     def _pii_terms(self):
         self._parse_and_store_config()
@@ -97,20 +102,21 @@ class PiiAnnotationChecker(BaseChecker):
 
         Substring match of any pii-term inside *name* → PII.
         """
-        lower = name.lower()
-        return any(term in lower for term in self._pii_terms())
+        normalized_name = name.lower()
+        return any(term in normalized_name for term in self._pii_terms())
 
     @utils.only_required_for_messages(PII_INVALID_ANNOTATION_MESSAGE_ID)
     def visit_classdef(self, node):
         """
-        Detect PII fields in Django model classes annotated with ``.. no_pii:``.
+        Detect PII fields in Django model classes annotated
+        with ``.. no_pii:``.
         """
-        # Index every class definition in the module for same-module ancestry BFS.
+        # Index every class definition for same-module ancestry BFS.
         self._module_classdefs[node.name] = node
 
         if not self._is_annotation_eligible_django_model(node):
             return
-        if not self._class_has_no_pii_annotation(node):
+        if not self._docstring_has_no_pii(node):
             return
 
         pii_fields = self._collect_pii_fields(node)
@@ -123,10 +129,12 @@ class PiiAnnotationChecker(BaseChecker):
 
     def _is_annotation_eligible_django_model(self, node):
         """
-        Return True if *node* is a concrete (non-abstract, non-proxy) Django model.
+        Return True if *node* is a concrete (non-abstract, non-proxy)
+        Django model.
 
-        Tries astroid's resolved ancestor walk first (works when Django is importable),
-        then falls back to raw AST base-name BFS for standalone pylint runs.
+        Tries astroid's resolved ancestor walk first (works when Django is
+        importable), then falls back to raw AST base-name BFS for standalone
+        pylint runs.
         """
         model_bases = self._django_model_bases()
 
@@ -138,7 +146,8 @@ class PiiAnnotationChecker(BaseChecker):
                     is_model_subclass = True
                     break
         except astroid_exceptions.AstroidError:
-            # Inference failed (e.g. Django not installed), fall back to raw AST.
+            # Inference failed (e.g. Django not installed).
+            # Fall back to raw AST.
             pass
 
         # Fallback: walk raw AST base names for standalone/offline runs.
@@ -149,7 +158,10 @@ class PiiAnnotationChecker(BaseChecker):
             return False
 
         # Skip abstract and proxy models (detected via inner Meta class).
-        if any(self._meta_has_true_flag(node, flag) for flag in ("abstract", "proxy")):
+        if any(
+            self._meta_has_true_flag(node, flag)
+            for flag in ("abstract", "proxy")
+        ):
             return False
 
         return True
@@ -163,13 +175,20 @@ class PiiAnnotationChecker(BaseChecker):
         re-read for each module.
         """
         if self._parsed_django_model_bases is None:
-            raw = getattr(self.linter.config, "pii_django_model_bases", ["Model"])
-            self._parsed_django_model_bases = {b.strip() for b in raw if b.strip()}
+            raw = getattr(
+                self.linter.config,
+                "pii_django_model_bases",
+                ["Model"],
+            )
+            self._parsed_django_model_bases = {
+                base.strip() for base in raw if base.strip()
+            }
         return self._parsed_django_model_bases
 
     def _raw_ast_is_model_subclass(self, node):
         """
-        Return True if *node* inherits from a model base by BFS over raw AST names.
+        Return True if *node* inherits from a model base using BFS over
+        raw AST names.
 
         Only classes defined in the same module can be followed transitively.
         External bases (e.g. ``django.db.models.Model``) are matched by bare
@@ -211,24 +230,23 @@ class PiiAnnotationChecker(BaseChecker):
         Return True if the inner ``Meta`` class sets ``flag_name = True``.
         """
         for child in classdef_node.body:
-            if not (isinstance(child, astroid_nodes.ClassDef) and child.name == "Meta"):
+            if not (
+                isinstance(child, astroid_nodes.ClassDef)
+                and child.name == "Meta"
+            ):
                 continue
             for stmt in child.body:
                 if not isinstance(stmt, astroid_nodes.Assign):
                     continue
                 for target in stmt.targets:
-                    if (isinstance(target, astroid_nodes.AssignName)
-                            and target.name == flag_name
-                            and isinstance(stmt.value, astroid_nodes.Const)
-                            and stmt.value.value is True):
+                    if (
+                        isinstance(target, astroid_nodes.AssignName)
+                        and target.name == flag_name
+                        and isinstance(stmt.value, astroid_nodes.Const)
+                        and stmt.value.value is True
+                    ):
                         return True
         return False
-
-    def _class_has_no_pii_annotation(self, node):
-        """
-        Return True if the class docstring carries a ``.. no_pii:`` annotation.
-        """
-        return self._docstring_has_no_pii(node)
 
     def _docstring_has_no_pii(self, node):
         """
@@ -239,12 +257,14 @@ class PiiAnnotationChecker(BaseChecker):
 
     def _collect_pii_fields(self, node):
         """
-        Return all PII field name strings and their AST nodes found in the class body.
+        Return PII-like field names and their AST nodes found in
+        the class body.
 
         Scans:
         - Class-level ``Assign`` targets:    ``email = models.EmailField()``
         - Class-level ``AnnAssign`` targets: ``email: str = ""``
-        - ``self.X`` attribute assignments in method bodies, reported as ``"self.X"``.
+        - Method-body instance assignments (both ``Assign`` and ``AnnAssign``):
+          ``self.email = ...`` and ``self.email: str = ...``.
         """
         found = []
 
@@ -266,10 +286,23 @@ class PiiAnnotationChecker(BaseChecker):
             elif isinstance(child, astroid_nodes.FunctionDef):
                 for stmt in child.nodes_of_class(astroid_nodes.Assign):
                     for target in stmt.targets:
-                        if (isinstance(target, astroid_nodes.AssignAttr)
-                                and isinstance(target.expr, astroid_nodes.Name)
-                                and target.expr.name == "self"
-                                and self._is_pii_name(target.attrname)):
+                        if (
+                            isinstance(target, astroid_nodes.AssignAttr)
+                            and isinstance(target.expr, astroid_nodes.Name)
+                            and target.expr.name == "self"
+                            and self._is_pii_name(target.attrname)
+                        ):
                             found.append((f"self.{target.attrname}", stmt))
+
+                # Annotated instance assignments: ``self.email: str = ...``
+                for stmt in child.nodes_of_class(astroid_nodes.AnnAssign):
+                    target = stmt.target
+                    if (
+                        isinstance(target, astroid_nodes.AssignAttr)
+                        and isinstance(target.expr, astroid_nodes.Name)
+                        and target.expr.name == "self"
+                        and self._is_pii_name(target.attrname)
+                    ):
+                        found.append((f"self.{target.attrname}", stmt))
 
         return found
